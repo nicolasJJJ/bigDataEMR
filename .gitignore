@@ -1,3 +1,5 @@
 *.parquet
 *.csv
 data
+kaggle.json
+readparquet.py
