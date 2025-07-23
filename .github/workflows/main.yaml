@@ -2,7 +2,7 @@ name: Manage bucket & upload script
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
 
   workflow_dispatch:
 
