@@ -23,24 +23,24 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: "$AWS_REGION"
+          aws-region: "${{ env.AWS_REGION }}"
           role-to-assume: arn:aws:iam::779846822053:role/githubCreateS3Bucket  # this will be the ARN of the role you created in the "Creating a Role for deployment" step.
           role-session-name: GithubActions-S3
           mask-aws-account-id: true
       - name: Create bucket if not exists
         run: |
-          if aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
+          if aws s3api head-bucket --bucket "${{ env.BUCKET_NAME}}" 2>/dev/null; then
             echo "Bucket exists"
           else
             echo "Creating bucket"
             aws s3api create-bucket \
-              --bucket "$BUCKET_NAME" \
-              --region "$AWS_REGION" \
-              --create-bucket-configuration LocationConstraint="$AWS_REGION"
+              --bucket "${{ env.BUCKET_NAME}}" \
+              --region "${{ env.AWS_REGION }}" \
+              --create-bucket-configuration LocationConstraint="${{ env.AWS_REGION }}"
 
-            aws s3api put-bucket-policy --bucket "$BUCKET_NAME" --policy '{
+            aws s3api put-bucket-policy --bucket "${{ env.BUCKET_NAME}}" --policy '{
             "Version":"2012-10-17",
-            "Statement":[{"Sid":"AllowEMRAccess","Effect":"Allow","Principal":"*","Action":["s3:GetObject","s3:PutObject","s3:ListBucket"],"Resource":["arn:aws:s3:::'"$BUCKET_NAME"'","arn:aws:s3:::'"$BUCKET_NAME"'/*"]}]}'
+            "Statement":[{"Sid":"AllowEMRAccess","Effect":"Allow","Principal":"*","Action":["s3:GetObject","s3:PutObject","s3:ListBucket"],"Resource":["arn:aws:s3:::'"${{ env.BUCKET_NAME}}"'","arn:aws:s3:::'"${{ env.BUCKET_NAME}}"'/*"]}]}'
           fi
 
   upload-script:
@@ -57,7 +57,7 @@ jobs:
       - name: Upload script to S3
         run: |
           echo "Upload script.py to the bucket/src"
-          aws s3 cp code/script.py s3://$BUCKET_NAME/src/ --region $AWS_REGION
+          aws s3 cp code/script.py s3://${{ env.BUCKET_NAME}}/src/ --region ${{ env.AWS_REGION }}
         #env:
         #  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         #  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
