@@ -23,7 +23,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: $AWS_REGION
+          aws-region: "$AWS_REGION"
           role-to-assume: arn:aws:iam::779846822053:role/githubCreateS3Bucket  # this will be the ARN of the role you created in the "Creating a Role for deployment" step.
           role-session-name: GithubActions-S3
           mask-aws-account-id: true
