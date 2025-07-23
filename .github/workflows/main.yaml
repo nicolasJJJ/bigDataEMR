@@ -2,7 +2,7 @@ name: Manage bucket & upload script
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "main" ]
 
   workflow_dispatch:
 
@@ -51,9 +51,10 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: "${{ env.AWS_REGION }}"
+          role-to-assume: arn:aws:iam::779846822053:role/githubCreateS3Bucket  # this will be the ARN of the role you created in the "Creating a Role for deployment" step.
+          role-session-name: GithubActions-S3
+          mask-aws-account-id: true
       - name: Upload script to S3
         run: |
           echo "Upload script.py to the bucket/src"
