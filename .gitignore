@@ -1,0 +1,5 @@
+/data
+csv*
+kaggle.json
+readparquet.py
+.terraform*
