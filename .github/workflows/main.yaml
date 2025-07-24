@@ -37,6 +37,7 @@ jobs:
               --bucket "${{ env.BUCKET_NAME}}" \
               --region "${{ env.AWS_REGION }}" \
               --create-bucket-configuration LocationConstraint="${{ env.AWS_REGION }}"
+              --versioning-configuration Status=Enabled
 
             aws s3api put-bucket-policy --bucket "${{ env.BUCKET_NAME}}" --policy '{
             "Version":"2012-10-17",
