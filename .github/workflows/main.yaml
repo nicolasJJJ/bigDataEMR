@@ -27,7 +27,7 @@ jobs:
           aws-region: "${{ env.AWS_REGION }}"
           role-to-assume: arn:aws:iam::779846822053:role/githubCreateS3Bucket  # this will be the ARN of the role you created in the "Creating a Role for deployment" step.
           role-session-name: GithubActions-S3
-          #mask-aws-account-id: true
+          mask-aws-account-id: true
       - name: Create bucket if not exists
         run: |
           if aws s3api head-bucket --bucket "${{ env.BUCKET_NAME}}" 2>/dev/null; then
@@ -39,13 +39,14 @@ jobs:
               --region "${{ env.AWS_REGION }}" \
               --create-bucket-configuration LocationConstraint="${{ env.AWS_REGION }}" \
             
+            aws s3api put-bucket-policy --bucket "${{ env.BUCKET_NAME}}" --policy '{
+            "Version":"2012-10-17",
+            "Statement":[{"Sid":"AllowEMRAccess","Effect":"Allow","Principal":"*","Action":["s3:GetObject","s3:PutObject","s3:ListBucket"],"Resource":["arn:aws:s3:::'"${{ env.BUCKET_NAME}}"'","arn:aws:s3:::'"${{ env.BUCKET_NAME}}"'/*"]}]}'
+          
             aws s3api put-bucket-versioning \
               --bucket "${{ env.BUCKET_NAME }}" \
               --versioning-configuration Status=Enabled
 
-            aws s3api put-bucket-policy --bucket "${{ env.BUCKET_NAME}}" --policy '{
-            "Version":"2012-10-17",
-            "Statement":[{"Sid":"AllowEMRAccess","Effect":"Allow","Principal":"*","Action":["s3:GetObject","s3:PutObject","s3:ListBucket"],"Resource":["arn:aws:s3:::'"${{ env.BUCKET_NAME}}"'","arn:aws:s3:::'"${{ env.BUCKET_NAME}}"'/*"]}]}'
           fi
 
   upload-script:
