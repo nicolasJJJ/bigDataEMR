@@ -3,3 +3,6 @@
 data
 kaggle.json
 readparquet.py
+.terraform*
+LICENCE.txt
+

@@ -2,7 +2,16 @@ from pyspark.sql import SparkSession
 import os
 import opendatasets as od
 from pyspark.sql.functions import col, length, instr, when
+import boto3
 
+session = boto3.Session(region_name='eu-west-3')
+ssm = session.client('ssm')
+
+usr = ssm.get_parameter(Name="/kaggle/username", WithDecryption=True)
+key = ssm.get_parameter(Name="/kaggle/key", WithDecryption=True)
+
+with open("kaggle.json", "w") as text_file:
+    print(f'{"username":"{usr}","key":"{key}"}', file=text_file)
 
 od.download(
     "https://www.kaggle.com/datasets/dschettler8845/the-pile-dataset-part-00-of-29",
@@ -13,7 +22,7 @@ od.download(
 file_path = os.path.abspath("../data/the-pile-dataset-part-00-of-29/00.jsonl")
 
 if not os.path.exists(file_path):
-    raise FileNotFoundError(f"PUTAIN DE MERDE : fichier introuvable à {file_path}")
+    raise FileNotFoundError(f"fichier introuvable à {file_path}")
 
 
 spark = SparkSession.builder \

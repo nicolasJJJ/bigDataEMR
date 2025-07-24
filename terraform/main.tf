@@ -209,10 +209,30 @@ resource "aws_iam_role" "emr_ec2_role" {
   managed_policy_arns = ["arn:aws:iam::aws:policy/AmazonElasticMapReduceFullAccess"]
 }
 
+resource "aws_iam_policy" "emr_ec2_ssm_policy" {
+  name        = "emr-ec2-ssm-getparam-policy"
+  description = "Allow EMR EC2 instances to read SSM parameters"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow"
+      Action = ["ssm:GetParameter","ssm:GetParameters"]
+      Resource = "arn:aws:ssm:eu-west-3:*:parameter/kaggle/*"
+    }]
+  })
+}
+
+
 resource "aws_iam_instance_profile" "emr_instance_profile" {
   name = "emr_instance_profile"
   role = aws_iam_role.emr_ec2_role.name
 }
+
+resource "aws_iam_role_policy_attachment" "attach_ssm" {
+  role       = aws_iam_role.emr_ec2_role.name
+  policy_arn = aws_iam_policy.emr_ec2_ssm_policy.arn
+}
+
 
 ###############################################################################
 # 6. Security Group                                                           #
