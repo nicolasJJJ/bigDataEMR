@@ -12,7 +12,7 @@ permissions:
   id-token: write
 
 env:
-  BUCKET_NAME: sparkresultsjjj_${{ github.ref_name }}
+  BUCKET_NAME: sparkresultsjjj${{ github.ref_name }}
   AWS_REGION: eu-west-3
 
 
