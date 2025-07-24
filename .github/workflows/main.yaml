@@ -2,7 +2,7 @@ name: Manage bucket & upload script
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
 
   workflow_dispatch:
 
@@ -12,8 +12,9 @@ permissions:
   id-token: write
 
 env:
-  BUCKET_NAME: sparkresultsjjj
+  BUCKET_NAME: sparkresultsjjj_${{ github.ref_name }}
   AWS_REGION: eu-west-3
+
 
 jobs:
   create-bucket:
@@ -36,7 +37,7 @@ jobs:
             aws s3api create-bucket \
               --bucket "${{ env.BUCKET_NAME}}" \
               --region "${{ env.AWS_REGION }}" \
-              --create-bucket-configuration LocationConstraint="${{ env.AWS_REGION }}"
+              --create-bucket-configuration LocationConstraint="${{ env.AWS_REGION }}" \
               --versioning-configuration Status=Enabled
 
             aws s3api put-bucket-policy --bucket "${{ env.BUCKET_NAME}}" --policy '{
@@ -60,6 +61,4 @@ jobs:
         run: |
           echo "Upload script.py to the bucket/src"
           aws s3 cp code/script.py s3://${{ env.BUCKET_NAME}}/src/ --region ${{ env.AWS_REGION }}
-        #env:
-        #  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        #  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+

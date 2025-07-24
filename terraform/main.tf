@@ -12,7 +12,7 @@ provider "aws" {
 ###############################################################################
 
 resource "aws_s3_bucket" "spark_results" {
-  bucket        = "sparkresultsjjj"
+  bucket        = "sparkresultsjjj_main"
   force_destroy = false
 
   lifecycle {
@@ -26,7 +26,7 @@ resource "aws_s3_bucket" "spark_results" {
 
 import {
   to = aws_s3_bucket.spark_results
-  id = "sparkresultsjjj"
+  id = "sparkresultsjjj_main"
 }
 
 
@@ -118,7 +118,7 @@ resource "aws_vpc_endpoint" "s3" {
       "Effect":"Allow",
       "Principal":"*",
       "Action":"s3:*",
-      "Resource":["arn:aws:s3:::sparkresultsjjj", "arn:aws:s3:::sparkresultsjjj/*"]
+      "Resource":["arn:aws:s3:::sparkresultsjjj_main", "arn:aws:s3:::sparkresultsjjj_main/*"]
     }
   ]
 }
@@ -294,9 +294,9 @@ resource "aws_emr_cluster" "spark" {
 
     hadoop_jar_step {
       jar  = "command-runner.jar"
-      args = ["spark-submit", "--deploy-mode","cluster","--master","yarn", "s3://sparkresultsjjj/src/script.py"]
+      args = ["spark-submit", "--deploy-mode","cluster","--master","yarn", "s3://sparkresultsjjj_main/src/script.py"]
     }
   }
 
-  log_uri = "s3://sparkresultsjjj/logs/"
+  log_uri = "s3://sparkresultsjjj_main/logs/"
 }
