@@ -64,3 +64,4 @@ jobs:
         run: |
           echo "Upload script.py to the bucket/src"
           aws s3 cp code/script.py s3://${{ env.BUCKET_NAME}}/src/ --region ${{ env.AWS_REGION }}
+
