@@ -27,7 +27,7 @@ jobs:
           aws-region: "${{ env.AWS_REGION }}"
           role-to-assume: arn:aws:iam::779846822053:role/githubCreateS3Bucket  # this will be the ARN of the role you created in the "Creating a Role for deployment" step.
           role-session-name: GithubActions-S3
-          mask-aws-account-id: true
+          #mask-aws-account-id: true
       - name: Create bucket if not exists
         run: |
           if aws s3api head-bucket --bucket "${{ env.BUCKET_NAME}}" 2>/dev/null; then
