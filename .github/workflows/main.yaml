@@ -2,7 +2,7 @@ name: Manage bucket & upload script
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "main", "developpement" ]
 
   workflow_dispatch:
 
@@ -29,24 +29,41 @@ jobs:
           role-session-name: GithubActions-S3
           mask-aws-account-id: true
       - name: Create bucket if not exists
+
+        env:
+          BUCKET_POLICY: |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "AllowEMRAccess",
+                  "Effect": "Allow",
+                  "Principal": {
+                    "AWS": "arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.AWS_ROLE }}"
+                  },
+                  "Action": ["s3:GetObject","s3:PutObject","s3:ListBucket"],
+                  "Resource": [
+                    "arn:aws:s3:::${{ env.BUCKET_NAME }}",
+                    "arn:aws:s3:::${{ env.BUCKET_NAME }}/*"
+                  ]
+                }
+              ]
+            }
+
         run: |   
+
+
           if aws s3api head-bucket --bucket "${{ env.BUCKET_NAME}}" 2>/dev/null; then
             echo "Bucket exists"
           else
-            echo "Creating bucket"
-            aws s3api create-bucket \
-              --bucket "${{ env.BUCKET_NAME}}" \
-              --region "${{ env.AWS_REGION }}" \
-              --create-bucket-configuration LocationConstraint="${{ env.AWS_REGION }}" \
-            
-            aws s3api put-bucket-policy --bucket "${{ env.BUCKET_NAME}}" --policy '{
-            "Version":"2012-10-17",
-            "Statement":[{"Sid":"AllowEMRAccess","Effect":"Allow","Principal": {arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.AWS_ROLE }}},"Action":["s3:GetObject","s3:PutObject","s3:ListBucket"],"Resource":["arn:aws:s3:::'"${{ env.BUCKET_NAME}}"'","arn:aws:s3:::'"${{ env.BUCKET_NAME}}"'/*"]}]}'
-          
-            aws s3api put-bucket-versioning \
-              --bucket "${{ env.BUCKET_NAME }}" \
-              --versioning-configuration Status=Enabled
+            set -euo pipefail
+            trap 'echo "Erreur détectée, suppression du bucket…"; aws s3api delete-bucket --bucket "${BUCKET_NAME}" --region "${AWS_REGION}"; exit 1' ERR
 
+
+            aws s3api create-bucket --bucket "${{ env.BUCKET_NAME }}" --region "${{ env.AWS_REGION }}" \
+            --create-bucket-configuration LocationConstraint="${{ env.AWS_REGION }}"
+            aws s3api put-bucket-policy --bucket "${{ env.BUCKET_NAME }}" --policy "${BUCKET_POLICY}"
+            trap - ERR
           fi
 
 
