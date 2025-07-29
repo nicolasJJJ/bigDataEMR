@@ -8,15 +8,18 @@ import boto3
 session = boto3.Session(region_name='eu-west-3')
 ssm = session.client('ssm')
 
-usr = ssm.get_parameter(Name="/kaggle/username", WithDecryption=True)
-key = ssm.get_parameter(Name="/kaggle/key", WithDecryption=True)
+response_usr = ssm.get_parameter(Name="/kaggle/username", WithDecryption=True)
+response_key = ssm.get_parameter(Name="/kaggle/key", WithDecryption=True)
+
+usr_value = response_usr['Parameter']['Value']
+key_value = response_key['Parameter']['Value']
 
 kaggle_dir = os.path.expanduser("~/.kaggle")
 os.makedirs(kaggle_dir, exist_ok=True)
 kaggle_path = os.path.join(kaggle_dir, "kaggle.json")
 
 with open(kaggle_path, "w") as json_file:
-    json.dump({"username": usr, "key": key}, json_file)
+    json.dump({"username": usr_value, "key": key_value}, json_file)
 
 os.chmod(kaggle_path, 0o600)
 
@@ -24,6 +27,7 @@ od.download(
     "https://www.kaggle.com/datasets/dschettler8845/the-pile-dataset-part-00-of-29",
     "../data"
 )
+
 
 
 file_path = os.path.abspath("../data/the-pile-dataset-part-00-of-29/00.jsonl")
