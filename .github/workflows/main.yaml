@@ -81,6 +81,7 @@ jobs:
           mask-aws-account-id: true
       - name: Upload script to S3
         run: |
-          echo "Upload script.py to the bucket/src"
+          echo "Upload script.py & install_python_libs.sh to the bucket/src"
+          aws s3 cp code/install_python_libs.sh s3://${{ env.BUCKET_NAME}}/src/ --region ${{ env.AWS_REGION }}
           aws s3 cp code/script.py s3://${{ env.BUCKET_NAME}}/src/ --region ${{ env.AWS_REGION }}
 
