@@ -59,7 +59,7 @@ resource "aws_internet_gateway" "gw" {
 }
 
 resource "aws_eip" "nat" {
-  vpc = true
+  domain = "vpc"
 }
 
 resource "aws_nat_gateway" "nat" {
@@ -119,6 +119,30 @@ resource "aws_vpc_endpoint" "s3" {
       "Principal":"*",
       "Action":"s3:*",
       "Resource":["arn:aws:s3:::sparkresultsjjjmain", "arn:aws:s3:::sparkresultsjjjmain/*"]
+    },
+    {
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": [
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::amazonlinux-2-repos-eu-west-3",
+        "arn:aws:s3:::amazonlinux-2-repos-eu-west-3/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": [
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::repo.eu-west-3.emr.amazonaws.com",
+        "arn:aws:s3:::repo.eu-west-3.emr.amazonaws.com/*"
+      ]
     }
   ]
 }
@@ -131,60 +155,111 @@ POLICY
 
 resource "aws_kms_key" "emr" {
   description             = "EMR CMK for S3 and EBS encryption"
-  deletion_window_in_days = 3
-  policy = <<EOF
+  deletion_window_in_days = 7
+ policy = <<EOF
 {
   "Version":"2012-10-17",
   "Statement":[
     {
-      "Sid":"Allow EMR Service",
-      "Effect":"Allow",
-      "Principal":{"Service":"elasticmapreduce.amazonaws.com"},
-      "Action":["kms:Encrypt","kms:Decrypt","kms:GenerateDataKey*"],
-      "Resource":"*"
+      "Sid": "Enable IAM User Permissions",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::779846822053:root" },
+      "Action": "kms:*",
+      "Resource": "*"
+    },
+{
+      "Sid": "Allow EMR Service",
+      "Effect": "Allow",
+      "Principal": { "Service": "elasticmapreduce.amazonaws.com" },
+      "Action": [
+        "kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", 
+        "kms:GenerateDataKey*", "kms:DescribeKey", "kms:CreateGrant"
+      ],
+      "Resource": "*"
     },
     {
-      "Sid":"Allow EC2 Instances",
-      "Effect":"Allow",
-      "Principal":{"AWS":"${aws_iam_role.emr_ec2_role.arn}"},
-      "Action":["kms:Decrypt","kms:GenerateDataKey*"],
-      "Resource":"*"
+      "Sid": "Allow EMR service role use of the key",
+      "Effect": "Allow",
+      "Principal":{"AWS":"${aws_iam_role.emr_service_role.arn}"},
+      "Action": [
+        "kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", 
+        "kms:GenerateDataKey*", "kms:DescribeKey", "kms:CreateGrant"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Allow EMR EC2 instances use of the key",
+      "Effect": "Allow",
+      "Principal":{"AWS":"${aws_iam_role.emr_ec2_role.arn}"},      
+      "Action": [
+        "kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", 
+        "kms:GenerateDataKey*", "kms:DescribeKey"
+      ],
+      "Resource": "*"
     }
   ]
-}
+}      
 EOF
+}
+
+###############################################################################
+# CUSTOM : putting certifs in S3 from local certs.zip file                    #
+###############################################################################
+
+data "archive_file" "certs_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/certs"          # ton dossier local contenant .pem
+  output_path = "${path.module}/build/certs.zip"
+}
+
+resource "aws_s3_object" "certs_zip" {
+  bucket = aws_s3_bucket.spark_results.id      # ton bucket
+  key    = "certs.zip"                  # chemin dans le bucket
+  source = data.archive_file.certs_zip.output_path
+  etag   = data.archive_file.certs_zip.output_md5   # force la mise à jour si le zip change :contentReference[oaicite:5]{index=5}
 }
 
 ###############################################################################
 # 4. Security Configuration EMR                                                #
 ###############################################################################
 
+
+
 resource "aws_emr_security_configuration" "sec_cfg" {
   name = "emr-secure"
+
+  depends_on = [
+    aws_s3_object.certs_zip
+  ]
+
 
   configuration = <<EOF
 {
   "EncryptionConfiguration": {
     "EnableAtRestEncryption": true,
     "AtRestEncryptionConfiguration": {
-      "S3EncryptionConfiguration": [
-        {
+      "S3EncryptionConfiguration": {
           "EncryptionMode": "SSE-KMS",
-          "AwsKmsKeyId": "${aws_kms_key.emr.arn}"
-        }
-      ],
-      "LocalDiskEncryptionConfiguration": {
-        "EncryptionKeyProviderType": "AwsKms",
-        "AwsKmsKeyId": "${aws_kms_key.emr.arn}"
+          "AwsKmsKey": "${aws_kms_key.emr.arn}"
       },
-      "EnableVolumeEncryption": true,
-      "VolumeEncryptionKey": "${aws_kms_key.emr.arn}"
+      "LocalDiskEncryptionConfiguration": {
+        "EnableEbsEncryption": true,
+        "EncryptionKeyProviderType": "AwsKms",
+        "AwsKmsKey": "${aws_kms_key.emr.arn}"
+      }
     },
-    "EnableInTransitEncryption": true
+    "EnableInTransitEncryption": true,
+    "InTransitEncryptionConfiguration": {
+      "TLSCertificateConfiguration": {
+        "CertificateProviderType": "PEM",
+        "S3Object": "s3://${aws_s3_object.certs_zip.bucket}/${aws_s3_object.certs_zip.key}"
+      }
+    }
   }
 }
 EOF
 }
+
 
 
 ###############################################################################
@@ -257,6 +332,22 @@ resource "aws_security_group" "allow_access" {
     }
 }
 
+resource "aws_security_group" "service_access" {
+  name        = "emr_service_access_sg"
+  description = "EMR service access security group"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description     = "Allow EMR Master SG on 9443"
+    from_port       = 9443
+    to_port         = 9443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.allow_access.id]
+  }
+
+}
+
+
 ###############################################################################
 # 7. Cluster EMR                                                                #
 ###############################################################################
@@ -268,22 +359,38 @@ resource "aws_emr_cluster" "spark" {
   service_role               = aws_iam_role.emr_service_role.arn
   log_encryption_kms_key_id  = aws_kms_key.emr.arn
   security_configuration     = aws_emr_security_configuration.sec_cfg.name
+  
+  bootstrap_action {
+    name = "Install Python libs"
+    path = "s3://sparkresultsjjjmain/src/install_python_libs.sh"
+  }
 
   ec2_attributes {
     subnet_id                         = aws_subnet.private.id
     instance_profile                  = aws_iam_instance_profile.emr_instance_profile.arn
     emr_managed_master_security_group = aws_security_group.allow_access.id
     emr_managed_slave_security_group  = aws_security_group.allow_access.id
+    service_access_security_group     = aws_security_group.service_access.id
   }
 
   master_instance_group {
-    instance_type  = "m5.xlarge"
+    instance_type  = "m5.2xlarge"
     instance_count = 1
+    ebs_config {
+      size                 = 100
+      type                 = "gp3"
+      volumes_per_instance = 1
+    } 
   }
 
   core_instance_group {
-    instance_type  = "m5.xlarge"
+    instance_type  = "m5.2xlarge"
     instance_count = 2
+    ebs_config {
+      size                 = 60
+      type                 = "gp3"
+      volumes_per_instance = 1
+    }    
   }
 
   keep_job_flow_alive_when_no_steps = false
@@ -294,9 +401,31 @@ resource "aws_emr_cluster" "spark" {
 
     hadoop_jar_step {
       jar  = "command-runner.jar"
-      args = ["spark-submit", "--deploy-mode","cluster","--master","yarn", "s3://sparkresultsjjjmain/src/script.py"]
+      args = ["spark-submit", "--master","yarn","--deploy-mode","cluster", "--conf", "spark.executor.memory=48g", "--conf", "spark.executor.memoryOverheadFactor=0.25", "s3://sparkresultsjjjmain/src/script.py"]
     }
   }
+  configurations = jsonencode([
+    {
+      classification = "yarn-site"
+      properties = {
+        "yarn.nodemanager.resource.memory-mb"      = "49152"  # 48 Go
+        "yarn.scheduler.maximum-allocation-mb"     = "49152"
+      }
+    },
+    {
+      classification = "spark-defaults"
+      properties = {
+        "spark.executor.memory"                    = "40g"    # heap
+        "spark.executor.memoryOverhead"            = "6g"     # overhead
+        "spark.driver.memory"                      = "4g"
+        "spark.yarn.maxAppAttempts"                = "1"
+        "spark.local.dir"                          = "/mnt"   # utiliser le gros EBS
+        "spark.yarn.executor.memoryOverheadFactor" = "0.25"   # 25% overhead si besoin
+      }
+    }
+  ])
+
+  
 
   log_uri = "s3://sparkresultsjjjmain/logs/"
 }
