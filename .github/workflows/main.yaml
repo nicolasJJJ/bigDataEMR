@@ -30,6 +30,10 @@ jobs:
           mask-aws-account-id: true
       - name: Create bucket if not exists
         run: |   
+          set -euo pipefail
+          trap 'echo "Erreur détectée, suppression du bucket…"; aws s3api delete-bucket --bucket "${BUCKET_NAME}" --region "${AWS_REGION}"; exit 1' ERR
+
+
           if aws s3api head-bucket --bucket "${{ env.BUCKET_NAME}}" 2>/dev/null; then
             echo "Bucket exists"
           else
@@ -39,14 +43,34 @@ jobs:
               --region "${{ env.AWS_REGION }}" \
               --create-bucket-configuration LocationConstraint="${{ env.AWS_REGION }}" \
             
-            aws s3api put-bucket-policy --bucket "${{ env.BUCKET_NAME}}" --policy '{
-            "Version":"2012-10-17",
-            "Statement":[{"Sid":"AllowEMRAccess","Effect":"Allow","Principal": {arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.AWS_ROLE }}},"Action":["s3:GetObject","s3:PutObject","s3:ListBucket"],"Resource":["arn:aws:s3:::'"${{ env.BUCKET_NAME}}"'","arn:aws:s3:::'"${{ env.BUCKET_NAME}}"'/*"]}]}'
-          
-            aws s3api put-bucket-versioning \
-              --bucket "${{ env.BUCKET_NAME }}" \
-              --versioning-configuration Status=Enabled
+              cat <<- 'POLICY' > bucket-policy.json
+              {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "AllowEMRAccess",
+                    "Effect": "Allow",
+                    "Principal": {
+                      "AWS": "arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.AWS_ROLE }}"
+                    },
+                    "Action": [
+                      "s3:GetObject",
+                      "s3:PutObject",
+                      "s3:ListBucket"
+                    ],
+                    "Resource": [
+                      "arn:aws:s3:::${{ env.BUCKET_NAME }}",
+                      "arn:aws:s3:::${{ env.BUCKET_NAME }}/*"
+                    ]
+                  }
+                ]
+              }
+              POLICY
 
+            aws s3api put-bucket-policy \
+              --bucket "${{ env.BUCKET_NAME }}" \
+              --policy file://bucket-policy.json
+            trap - ERR
           fi
 
 
