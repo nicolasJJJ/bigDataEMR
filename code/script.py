@@ -14,7 +14,9 @@ response_key = ssm.get_parameter(Name="/kaggle/key", WithDecryption=True)
 usr_value = response_usr['Parameter']['Value']
 key_value = response_key['Parameter']['Value']
 
-kaggle_dir = os.path.expanduser("~/.kaggle")
+
+kaggle_dir = "/tmp/.kaggle"
+os.environ["KAGGLE_CONFIG_DIR"] = kaggle_dir  
 os.makedirs(kaggle_dir, exist_ok=True)
 kaggle_path = os.path.join(kaggle_dir, "kaggle.json")
 
