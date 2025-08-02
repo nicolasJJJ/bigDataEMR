@@ -1,7 +1,7 @@
 import json
 from pyspark.sql import SparkSession
 import os
-import opendatasets as od
+
 from pyspark.sql.functions import col, length, instr, when
 import boto3
 
@@ -15,15 +15,10 @@ usr_value = response_usr['Parameter']['Value']
 key_value = response_key['Parameter']['Value']
 
 
-kaggle_dir = "/tmp/.kaggle"
-os.environ["KAGGLE_CONFIG_DIR"] = kaggle_dir  
-os.makedirs(kaggle_dir, exist_ok=True)
-kaggle_path = os.path.join(kaggle_dir, "kaggle.json")
+os.environ["KAGGLE_USERNAME"] = usr_value
+os.environ["KAGGLE_KEY"] = key_value
 
-with open(kaggle_path, "w") as json_file:
-    json.dump({"username": usr_value, "key": key_value}, json_file)
-
-os.chmod(kaggle_path, 0o600)
+import opendatasets as od
 
 od.download(
     "https://www.kaggle.com/datasets/dschettler8845/the-pile-dataset-part-00-of-29",
