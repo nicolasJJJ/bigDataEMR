@@ -26,17 +26,10 @@ with open("kaggle.json", "w") as file:
 
 import opendatasets as od 
 
-target_dir = Path("~/tmp").expanduser()
-target_dir.mkdir(parents=True, exist_ok=True)
-
-od.download(
-    "https://www.kaggle.com/datasets/dschettler8845/the-pile-dataset-part-00-of-29",
-    str(target_dir)
-)
+od.download("https://www.kaggle.com/datasets/dschettler8845/the-pile-dataset-part-00-of-29")
 
 
-
-file_path = (target_dir / "the-pile-dataset-part-00-of-29" / "00.jsonl").resolve()
+file_path = (Path("./")/ "the-pile-dataset-part-00-of-29" / "00.jsonl").resolve()
 
 if not os.path.exists(file_path):
     raise FileNotFoundError(f"fichier introuvable à {file_path}")
