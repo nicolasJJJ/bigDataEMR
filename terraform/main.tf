@@ -156,14 +156,87 @@ POLICY
 # 3. KMS CMK pour chiffrement EMR S3/EBS                                        #
 ###############################################################################
 
+### !!! il faut l'importer avant
 resource "aws_kms_key" "emrb" {
   description             = "EMR CMK for S3 and EBS encryption"
   deletion_window_in_days = 7
 
+  policy = <<POLICY
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowKeyAdmins",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+      },
+      "Action": "kms:*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowEMRServicePrincipal",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "elasticmapreduce.amazonaws.com"
+      },
+      "Action": [
+        "kms:Encrypt",
+        "kms:Decrypt",
+        "kms:ReEncrypt*",
+        "kms:GenerateDataKey*",
+        "kms:DescribeKey",
+        "kms:CreateGrant"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowEMRServiceRoleUsage",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "${aws_iam_role.emr_service_role.arn}"
+      },
+      "Action": [
+        "kms:Encrypt",
+        "kms:Decrypt",
+        "kms:ReEncrypt*",
+        "kms:GenerateDataKey*",
+        "kms:DescribeKey",
+        "kms:CreateGrant"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowEMREC2RoleUsage",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "${aws_iam_role.emr_ec2_role.arn}"
+      },
+      "Action": "*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowSSMParameterStore",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ssm.amazonaws.com"
+      },
+      "Action": [
+        "kms:Encrypt",
+        "kms:Decrypt",
+        "kms:ReEncrypt*",
+        "kms:GenerateDataKey*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+POLICY
+
 
   lifecycle {
     prevent_destroy = true
-    ignore_changes  = [policy]
+    #ignore_changes  = [policy]
   }
 }
 
@@ -251,31 +324,33 @@ resource "aws_iam_role" "emr_ec2_role" {
 }
 
 resource "aws_iam_policy" "emr_ec2_ssm_policy" {
-  name        = "emr-ec2-ssm-getparam-policy"
-  description = "Allow EMR EC2 instances to read SSM parameters"
+  name        = "emr_ec2_ssm_policy"
+  description = "Allow EMR EC2 instances to read SSM parameters and use KMS key"
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = [
+        Effect = "Allow",
+        Action = [
           "ssm:GetParameter",
           "ssm:GetParameters",
           "ssm:GetParametersByPath",
           "ssm:DescribeParameters"
         ],
-      Resource = "arn:aws:ssm:eu-west-3:${data.aws_caller_identity.current.account_id}:parameter/kaggle/*"
-    },{
-       Effect = "Allow",
-      Action= [
-        "kms:Decrypt",
-        "kms:CreateGrant",
-        "kms:GenerateDataKey",
-        "kms:GenerateDataKeyWithoutPlaintext",
-        "kms:DescribeKey"
-      ],
-      Resource= "${aws_kms_key.emrb.arn}"
-    }]
+        Resource = "arn:aws:ssm:eu-west-3:${data.aws_caller_identity.current.account_id}:parameter/kaggle/*"
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "kms:Decrypt",
+          "kms:CreateGrant",
+          "kms:GenerateDataKey",
+          "kms:GenerateDataKeyWithoutPlaintext",
+          "kms:DescribeKey"
+        ],
+        Resource = "${aws_kms_key.emrb.arn}"
+      }
+    ]
   })
 }
 
