@@ -28,7 +28,7 @@ côté terraform, considérant que vous avez déjà votre bucket de configuré
 ```
 cd terraform
 terraform init
-terraform import aws_kms_key.emr <votre-cle-pour-EMR>
+terraform import aws_kms_key.emr <ARN-de-la-clé-ksm>
 terraform apply -auto-approve
 ```
 

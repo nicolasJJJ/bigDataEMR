@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from pyspark.sql import SparkSession
 import os
 
@@ -18,16 +19,24 @@ key_value = response_key['Parameter']['Value']
 os.environ["KAGGLE_USERNAME"] = usr_value
 os.environ["KAGGLE_KEY"] = key_value
 
+
+
+with open("kaggle.json", "w") as file:
+    json.dump({"username":"{usr_value}","key":"{key_value}"}, file)
+
 import opendatasets as od 
+
+target_dir = Path("~/tmp").expanduser()
+target_dir.mkdir(parents=True, exist_ok=True)
 
 od.download(
     "https://www.kaggle.com/datasets/dschettler8845/the-pile-dataset-part-00-of-29",
-    "../data"
+    str(target_dir)
 )
 
 
 
-file_path = os.path.abspath("../data/the-pile-dataset-part-00-of-29/00.jsonl")
+file_path = (target_dir / "the-pile-dataset-part-00-of-29" / "00.jsonl").resolve()
 
 if not os.path.exists(file_path):
     raise FileNotFoundError(f"fichier introuvable à {file_path}")
