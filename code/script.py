@@ -26,6 +26,14 @@ with open("kaggle.json", "w") as file:
     json.dump({"username":"{usr_value}","key":"{key_value}"}, file)
 os.chmod("kaggle.json", 0o700)
 
+# initiate spark session to avoid timeout
+
+spark = SparkSession.builder \
+    .appName("EMR_spark") \
+    .getOrCreate()
+
+spark.sparkContext.setLogLevel("INFO")
+
 # Downloading kaggle file
 
 import opendatasets as od 
@@ -40,11 +48,6 @@ if not os.path.exists(file_path):
 
 # Spark job
 
-spark = SparkSession.builder \
-    .appName("EMR_spark") \
-    .getOrCreate()
-
-spark.sparkContext.setLogLevel("WARN")
 
 
 df = spark.read.json(file_path)
