@@ -21,12 +21,10 @@ key_value = response_key['Parameter']['Value']
 os.environ["KAGGLE_USERNAME"] = usr_value
 os.environ["KAGGLE_KEY"] = key_value
 
-kaggle_dir = Path.cwd() / ".kaggle"
-kaggle_dir.mkdir(parents=True, exist_ok=True)
 
-with open(kaggle_dir / "kaggle.json", "w") as file:
+with open("kaggle.json", "w") as file:
     json.dump({"username":"{usr_value}","key":"{key_value}"}, file)
-os.chmod(kaggle_dir / "kaggle.json", 0o700)
+os.chmod("kaggle.json", 0o700)
 
 # Downloading kaggle file
 
