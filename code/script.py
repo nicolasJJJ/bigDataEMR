@@ -6,6 +6,8 @@ import os
 from pyspark.sql.functions import col, length, instr, when
 import boto3
 
+# Getting Kaggle credentials
+
 session = boto3.Session(region_name='eu-west-3')
 ssm = session.client('ssm')
 
@@ -19,12 +21,14 @@ key_value = response_key['Parameter']['Value']
 os.environ["KAGGLE_USERNAME"] = usr_value
 os.environ["KAGGLE_KEY"] = key_value
 
-kaggle_dir = Path.home() / ".kaggle"
+kaggle_dir = Path.cwd() / ".kaggle"
 kaggle_dir.mkdir(parents=True, exist_ok=True)
 
-with open(kaggle_dir /"kaggle.json", "w") as file:
+with open(kaggle_dir / "kaggle.json", "w") as file:
     json.dump({"username":"{usr_value}","key":"{key_value}"}, file)
-os.chmod(kaggle_dir /"kaggle.json", 0o600)
+os.chmod(kaggle_dir / "kaggle.json", 0o700)
+
+# Downloading kaggle file
 
 import opendatasets as od 
 
@@ -36,6 +40,7 @@ file_path = (Path.cwd()/ "the-pile-dataset-part-00-of-29" / "00.jsonl").resolve(
 if not os.path.exists(file_path):
     raise FileNotFoundError(f"fichier introuvable à {file_path}")
 
+# Spark job
 
 spark = SparkSession.builder \
     .appName("EMR_spark") \
