@@ -6,7 +6,7 @@ export AWS_DEFAULT_REGION="eu-west-3"
 DATA_DIR="/mnt/thepile"              # /mnt > /tmp pour éviter de remplir la racine
 KAGGLE_USER_PARAM="/kaggle/username" # SSM params
 KAGGLE_KEY_PARAM="/kaggle/key"
-KAGGLE_DIR="/root/.kaggle"           # Bootstrap tourne en root
+KAGGLE_DIR="/home/.kaggle"           # Bootstrap tourne en root
 DATA_URL="https://www.kaggle.com/datasets/dschettler8845/the-pile-dataset-part-00-of-29"
 DATA_SUBDIR="the-pile-dataset-part-00-of-29"
 LOCAL_JSONL="${DATA_DIR}/${DATA_SUBDIR}/00.jsonl"
@@ -27,16 +27,16 @@ KAGGLE_USERNAME="$(aws ssm get-parameter --name "${KAGGLE_USER_PARAM}" --with-de
 KAGGLE_KEY="$(aws ssm get-parameter --name "${KAGGLE_KEY_PARAM}" --with-decryption --query Parameter.Value --output text)"
 
 # Écriture config Kaggle là où il faut
-mkdir -p "${KAGGLE_DIR}"
-cat > "${KAGGLE_DIR}/kaggle.json" <<EOF
+sudo mkdir -p "${KAGGLE_DIR}"
+sudo cat > "${KAGGLE_DIR}/kaggle.json" <<EOF
 {"username":"${KAGGLE_USERNAME}","key":"${KAGGLE_KEY}"}
 EOF
-chmod 600 "${KAGGLE_DIR}/kaggle.json"
+sudo chmod 600 "${KAGGLE_DIR}/kaggle.json"
 export KAGGLE_CONFIG_DIR="${KAGGLE_DIR}"
 export KAGGLE_USERNAME KAGGLE_KEY
 
 # Téléchargement dataset (opendatasets dézippe par défaut)
-mkdir -p "${DATA_DIR}"
+sudo mkdir -p "${DATA_DIR}"
 python3 - <<'PY'
 import opendatasets as od, os
 od.download(os.environ["DATA_URL"], data_dir=os.environ["DATA_DIR"])
