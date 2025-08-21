@@ -40,6 +40,9 @@ KAGGLE_USERNAME="$(aws ssm get-parameter --name "${KAGGLE_USER_PARAM}" --with-de
 KAGGLE_KEY="$(aws ssm get-parameter --name "${KAGGLE_KEY_PARAM}" --with-decryption --query Parameter.Value --output text)"
 export KAGGLE_USERNAME KAGGLE_KEY
 
+echo "[*] Kaggle"
+
+
 # Écriture config Kaggle dans le home du user courant (PAS de redirection sudo !)
 umask 077
 mkdir -p "${KAGGLE_DIR}"
@@ -49,12 +52,16 @@ EOF
 chmod 600 "${KAGGLE_DIR}/kaggle.json"
 export KAGGLE_CONFIG_DIR="${KAGGLE_DIR}"
 
+echo "[*] Configs"
+
 # Téléchargement dataset (opendatasets dézippe par défaut)
 mkdir -p "${DATA_DIR}"
 python3 - <<'PY'
 import os, opendatasets as od
 od.download(os.environ["DATA_URL"], data_dir=os.environ["DATA_DIR"])
 PY
+
+echo "[*] DLL"
 
 LOCAL_JSONL="${DATA_DIR}/${DATA_SUBDIR}/00.jsonl"
 
