@@ -1,3 +1,19 @@
+terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 5.54.0"  
+    }
+    archive = {
+      source  = "hashicorp/archive"
+      version = ">= 2.4.0"
+    }
+  }
+}
+
+
 variable "aws_region" {
   type        = string
   default     = "eu-west-3"
@@ -16,11 +32,7 @@ data "aws_caller_identity" "current" {}
 
 resource "aws_s3_bucket" "spark_results" {
   bucket        = "sparkresultsjjjmain"
-  force_destroy = false
 
-  lifecycle {
-    prevent_destroy = true
-  }
 
   tags = {
     Name        = "emrproject"
@@ -34,86 +46,68 @@ import {
 
 
 ###############################################################################
-# 1. VPC + subnets public/private + IGW + NAT Gateway + Route Tables         #
+# 1. VPC module 
 ###############################################################################
 
-resource "aws_vpc" "main" {
-  cidr_block           = "10.0.0.0/16"
+
+
+module "vpc_main" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 5.0"
+
+  name = "emr_project"
+  cidr = "10.0.0.0/16"
+
+  azs             = ["eu-west-3a"]
+  public_subnets  = ["10.0.0.0/24"]
+  private_subnets = ["10.0.1.0/24"]
+
+  enable_dns_support   = true
   enable_dns_hostnames = true
-  tags = { Name = "emrproject" }
-}
 
-resource "aws_subnet" "public" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.0.0/24"
-  map_public_ip_on_launch = true
-  tags = { Name = "emrproject" }
-}
+  enable_nat_gateway     = true
+  single_nat_gateway     = true
+  one_nat_gateway_per_az = false
 
-resource "aws_subnet" "private" {
-  vpc_id     = aws_vpc.main.id
-  cidr_block = "10.0.1.0/24"
-  tags = { Name = "emrproject" }
-}
-
-resource "aws_internet_gateway" "gw" {
-  vpc_id = aws_vpc.main.id
-  tags = { Name = "emrproject" }
-}
-
-resource "aws_eip" "nat" {
-  domain = "vpc"
-}
-
-resource "aws_nat_gateway" "nat" {
-  allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public.id
-  depends_on    = [aws_internet_gateway.gw]
-  tags = { Name = "emrproject" }
-}
-
-resource "aws_route_table" "public_rt" {
-  vpc_id = aws_vpc.main.id
-  tags   = { Name = "emrproject" }
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.gw.id
+  tags = {
+    Name = "emr_project"
   }
 }
 
-resource "aws_route_table_association" "public_assoc" {
-  subnet_id      = aws_subnet.public.id
-  route_table_id = aws_route_table.public_rt.id
-}
+# ✅ Security group requis par EMR Serverless & Step Functions (manquait)
+resource "aws_security_group" "allow_access" {
+  name        = "emr_sg"
+  description = "Allow all traffic within VPC"
+  vpc_id      = module.vpc_main.vpc_id
 
-resource "aws_route_table" "private_rt" {
-  vpc_id = aws_vpc.main.id
-  tags   = { Name = "emrproject" }
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [module.vpc_main.vpc_cidr_block]
+  }
 
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.nat.id
+  egress  {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 }
 
-resource "aws_route_table_association" "private_assoc" {
-  subnet_id      = aws_subnet.private.id
-  route_table_id = aws_route_table.private_rt.id
-}
 
 ###############################################################################
-# 2. Gateway VPC Endpoint pour S3                                               #
+#    Gateway VPC Endpoint pour S3                 
 ###############################################################################
 
 resource "aws_vpc_endpoint" "s3" {
-  vpc_id            = aws_vpc.main.id
+  vpc_id            = module.vpc_main.vpc_id
   service_name      = "com.amazonaws.${var.aws_region}.s3"
   vpc_endpoint_type = "Gateway"
-  route_table_ids   = [
-    aws_route_table.public_rt.id,
-    aws_route_table.private_rt.id,
-  ]
+  route_table_ids = concat(
+    module.vpc_main.public_route_table_ids,
+    module.vpc_main.private_route_table_ids
+  )
   policy = <<POLICY
 {
   "Statement":[
@@ -152,11 +146,153 @@ resource "aws_vpc_endpoint" "s3" {
 POLICY
 }
 
+
+###############################################################################
+# ECS Task IAM Roles                                                          #
+###############################################################################
+
+resource "aws_iam_role" "ecs_execution_role" {
+  name = "ecs_execution_role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Principal = { Service = "ecs-tasks.amazonaws.com" },
+      Action   = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_policy" "ecs_execution_role_policy" {
+  name = "ecs_execution_role_policy"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = [
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:CreateLogGroup"
+        ],
+        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*"
+      },
+      {
+        Effect   = "Allow",
+        Action   = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_execution_role_attach" {
+  role       = aws_iam_role.ecs_execution_role.name
+  policy_arn = aws_iam_policy.ecs_execution_role_policy.arn
+}
+
+resource "aws_iam_role" "ecs_task_role" {
+  name = "ecs_task_role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Principal = { Service = "ecs-tasks.amazonaws.com" },
+      Action   = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_policy" "ecs_task_s3_policy" {
+  name = "ecs_task_s3_policy"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket"
+        ],
+        Resource = [
+          "arn:aws:s3:::sparkresultsjjjmain",
+          "arn:aws:s3:::sparkresultsjjjmain/*"
+        ]
+      },
+      {
+        Effect   = "Allow",
+        Action   = [
+          "ssm:GetParameter",
+          "kms:Decrypt"
+        ],
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/kaggle/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_task_s3_attach" {
+  role       = aws_iam_role.ecs_task_role.name
+  policy_arn = aws_iam_policy.ecs_task_s3_policy.arn
+}
+
+
+##########
+#
+#########
+
+resource "aws_ecs_cluster" "main" {
+  name = "emr-prep-cluster"
+}
+
+resource "aws_cloudwatch_log_group" "ecs_prep" {
+  name = "/ecs/emr-prep"
+  retention_in_days = 14
+}
+
+resource "aws_ecs_task_definition" "prep_task" {
+  family                   = "emr-prep-task"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = "16384"   
+  memory                   = "122880"   
+  execution_role_arn       = aws_iam_role.ecs_execution_role.arn
+  task_role_arn            = aws_iam_role.ecs_task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "pyproject"
+      image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.eu-west-3.amazonaws.com/emr_fine@sha256:a98f95ced530c40665934f57cdfce02dbc74745b73aa1e1c1a74989d7ef433e5"
+      essential = true
+      cpu       = 16384
+      memory    = 122880
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = "/ecs/emr-prep"
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
+    }
+  ])
+}
+
+
 ###############################################################################
 # 3. KMS CMK pour chiffrement EMR S3/EBS                                        #
 ###############################################################################
 
-### !!! il faut l'importer avant
 resource "aws_kms_key" "emrb" {
   description             = "EMR CMK for S3 and EBS encryption"
   deletion_window_in_days = 7
@@ -194,7 +330,7 @@ resource "aws_kms_key" "emrb" {
       "Sid": "AllowEMRServiceRoleUsage",
       "Effect": "Allow",
       "Principal": {
-        "AWS": "${aws_iam_role.emr_service_role.arn}"
+        "AWS": "${aws_iam_role.emr_serverless_job_role.arn}"
       },
       "Action": [
         "kms:Encrypt",
@@ -204,15 +340,6 @@ resource "aws_kms_key" "emrb" {
         "kms:DescribeKey",
         "kms:CreateGrant"
       ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "AllowEMREC2RoleUsage",
-      "Effect": "Allow",
-      "Principal": {
-        "AWS": "${aws_iam_role.emr_ec2_role.arn}"
-      },
-      "Action": "*",
       "Resource": "*"
     },
     {
@@ -226,6 +353,19 @@ resource "aws_kms_key" "emrb" {
         "kms:Decrypt",
         "kms:ReEncrypt*",
         "kms:GenerateDataKey*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowEmrServerlessJobRole",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "${aws_iam_role.emr_serverless_job_role.arn}"
+      },
+      "Action": [
+        "kms:Decrypt",
+        "kms:GenerateDataKey",
+        "kms:DescribeKey"
       ],
       "Resource": "*"
     }
@@ -305,191 +445,251 @@ EOF
 # 5. IAM Roles & Instance Profile EMR                                          #
 ###############################################################################
 
-resource "aws_iam_role" "emr_service_role" {
-  name = "emr_service_role"
+resource "aws_iam_role" "emr_serverless_job_role" {
+  name = "emr_serverless_job_role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
-    Statement = [{ Effect = "Allow", Principal = { Service = "elasticmapreduce.amazonaws.com" }, Action = "sts:AssumeRole" }]
+    Statement = [{
+      Effect = "Allow",
+      Principal = { Service = "emr-serverless.amazonaws.com" },
+      Action = "sts:AssumeRole"
+    }]
   })
-  managed_policy_arns = ["arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceRole"]
 }
 
-resource "aws_iam_role" "emr_ec2_role" {
-  name = "emr_ec2_role"
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [{ Effect = "Allow", Principal = { Service = "ec2.amazonaws.com" }, Action = "sts:AssumeRole" }]
-  })
-  managed_policy_arns = ["arn:aws:iam::aws:policy/AmazonElasticMapReduceFullAccess"]
-}
-
-resource "aws_iam_policy" "emr_ec2_ssm_policy" {
-  name        = "emr_ec2_ssm_policy"
-  description = "Allow EMR EC2 instances to read SSM parameters and use KMS key"
+resource "aws_iam_policy" "emr_serverless_job_policy" {
+  name   = "emr_serverless_job_policy"
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
       {
         Effect = "Allow",
-        Action = [
-          "ssm:GetParameter",
-          "ssm:GetParameters",
-          "ssm:GetParametersByPath",
-          "ssm:DescribeParameters"
-        ],
-        Resource = "arn:aws:ssm:eu-west-3:${data.aws_caller_identity.current.account_id}:parameter/kaggle/*"
+        Action = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"],
+        Resource = [
+          aws_s3_bucket.spark_results.arn,
+          "${aws_s3_bucket.spark_results.arn}/*"
+        ]
       },
       {
         Effect = "Allow",
-        Action = [
-          "kms:Decrypt",
-          "kms:CreateGrant",
-          "kms:GenerateDataKey",
-          "kms:GenerateDataKeyWithoutPlaintext",
-          "kms:DescribeKey"
-        ],
-        Resource = "${aws_kms_key.emrb.arn}"
+        Action = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"],
+        Resource = aws_kms_key.emrb.arn
       }
     ]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "attach_ssm_managed" {
-  role       = aws_iam_role.emr_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess"
+resource "aws_iam_role_policy_attachment" "emr_serverless_job_attach" {
+  role       = aws_iam_role.emr_serverless_job_role.name
+  policy_arn = aws_iam_policy.emr_serverless_job_policy.arn
 }
 
+# 6. Application EMR Serverless
+resource "aws_emrserverless_application" "spark_app" {
+  name          = "spark-emr-serverless"
+  release_label = "emr-6.9.0"
+  type          = "SPARK"
 
+  network_configuration {
+    subnet_ids         = module.vpc_main.private_subnets
+    security_group_ids = [aws_security_group.allow_access.id]
+  }
 
-resource "aws_iam_instance_profile" "emr_instance_profile" {
-  name = "emr_instance_profile"
-  role = aws_iam_role.emr_ec2_role.name
+  maximum_capacity {
+    cpu    = "96 vCPU"
+    memory = "384 GB"
+    disk   = "2000 GB"
+  }
 }
 
-resource "aws_iam_role_policy_attachment" "attach_ssm" {
-  role       = aws_iam_role.emr_ec2_role.name
-  policy_arn = aws_iam_policy.emr_ec2_ssm_policy.arn
-}
+# 7. Step Functions orchestration
+resource "aws_iam_role" "sfn_role" {
+  name = "emr-pipeline-sfn-role"
 
-
-###############################################################################
-# 6. Security Group                                                           #
-###############################################################################
-
-resource "aws_security_group" "allow_access" {
-  name        = "emr_sg"
-  description = "Allow all traffic within VPC"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    from_port        = 0
-    to_port          = 0
-    protocol         = "-1"
-    cidr_blocks=[aws_vpc.main.cidr_block] 
-    }
-  egress  { 
-    from_port=0 
-    to_port=0 
-    protocol="-1" 
-    cidr_blocks=["0.0.0.0/0"] 
-    }
-}
-
-resource "aws_security_group" "service_access" {
-  name        = "emr_service_access_sg"
-  description = "EMR service access security group"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    description     = "Allow EMR Master SG on 9443"
-    from_port       = 9443
-    to_port         = 9443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.allow_access.id]
-  }
-
-}
-
-
-###############################################################################
-# 7. Cluster EMR                                                                #
-###############################################################################
-
-resource "aws_emr_cluster" "spark" {
-  name                       = "spark-emr-cluster"
-  release_label              = "emr-6.9.0"
-  applications               = ["Spark","Hadoop"]
-  service_role               = aws_iam_role.emr_service_role.arn
-  log_encryption_kms_key_id  = aws_kms_key.emrb.arn
-  security_configuration     = aws_emr_security_configuration.sec_cfg.name
-  
-  bootstrap_action {
-    name = "Install Python libs"
-    path = "s3://sparkresultsjjjmain/src/install_python_libs.sh"
-  }
-
-  ec2_attributes {
-    subnet_id                         = aws_subnet.private.id
-    instance_profile                  = aws_iam_instance_profile.emr_instance_profile.name
-    emr_managed_master_security_group = aws_security_group.allow_access.id
-    emr_managed_slave_security_group  = aws_security_group.allow_access.id
-    service_access_security_group     = aws_security_group.service_access.id
-  }
-
-  master_instance_group {
-    instance_type  = "m5.4xlarge"
-    instance_count = 1
-    bid_price      = "0.46"
-    ebs_config {
-      size                 = 100
-      type                 = "gp3"
-      volumes_per_instance = 1
-    } 
-  }
-
-  core_instance_group {
-    instance_type  = "m5.4xlarge"
-    instance_count = 2
-    bid_price      = "0.46"
-    ebs_config {
-      size                 = 60
-      type                 = "gp3"
-      volumes_per_instance = 1
-    }    
-  }
-
-  keep_job_flow_alive_when_no_steps = false
-
-  step {
-    name              = "Spark Submit"
-    action_on_failure = "TERMINATE_CLUSTER"
-
-    hadoop_jar_step {
-      jar  = "command-runner.jar"
-      args = ["spark-submit", "--master","yarn","--deploy-mode","cluster", "--conf", "spark.executor.memory=48g", "--conf", "spark.executor.memoryOverhead=6g", "s3://sparkresultsjjjmain/src/script.py"]
-    }
-  }
-  configurations = jsonencode([
-    {
-      classification = "yarn-site"
-      properties = {
-        "yarn.nodemanager.resource.memory-mb"      = "57344"  # 56 Go
-        "yarn.scheduler.maximum-allocation-mb"     = "57344"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect    = "Allow",
+        Principal = { Service = "states.amazonaws.com" },
+        Action    = "sts:AssumeRole"
       }
-    },
-    {
-      classification = "spark-defaults"
-      properties = {
-        "spark.executor.memory"                    = "36g"    # heap
-        "spark.executor.memoryOverhead"            = "6g"     # overhead
-        "spark.driver.memory"                      = "4g"
-        "spark.yarn.maxAppAttempts"                = "1"
-        "spark.local.dir"                          = "/mnt"   # utiliser le gros EBS
+    ]
+  })
+}
+
+resource "aws_iam_policy" "sfn_events_policy" {
+  name = "emr-pipeline-sfn-events-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = [
+          "events:PutRule",
+          "events:PutTargets",
+          "events:DescribeRule",
+          "events:DeleteRule",
+          "events:RemoveTargets"
+        ],
+        Resource = "*"
       }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "sfn_attach_events_policy" {
+  role       = aws_iam_role.sfn_role.name
+  policy_arn = aws_iam_policy.sfn_events_policy.arn
+}
+
+
+resource "aws_iam_policy" "sfn_policy" {
+  name = "emr-pipeline-sfn-policy"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = ["ecs:RunTask", "ecs:DescribeTasks", "ecs:StopTask"],
+        Resource = [
+          aws_ecs_task_definition.prep_task.arn,
+          aws_ecs_cluster.main.arn
+        ]
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "ecs:RunTask",
+          "ecs:DescribeClusters"
+        ],
+        Resource = "*"
+      },
+      {
+        Effect = "Allow",
+        Action = ["iam:PassRole"],
+        Resource = [
+          aws_iam_role.ecs_execution_role.arn,
+          aws_iam_role.ecs_task_role.arn
+        ],
+        Condition = {
+          StringLikeIfExists = {
+            "iam:PassedToService" = "ecs-tasks.amazonaws.com"
+          }
+        }
+      },
+      {
+        Effect = "Allow",
+        Action = ["emr-serverless:StartJobRun", "emr-serverless:GetJobRun", "emr-serverless:CancelJobRun", "emr-serverless:ListApplications"],
+        Resource = "*"
+      },
+      {
+        Effect = "Allow",
+        Action = ["iam:PassRole"],
+        Resource = [ aws_iam_role.emr_serverless_job_role.arn ],
+        Condition = {
+          StringLikeIfExists = {
+            "iam:PassedToService" = "emr-serverless.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "sfn_attach" {
+  role       = aws_iam_role.sfn_role.name
+  policy_arn = aws_iam_policy.sfn_policy.arn
+}
+
+resource "aws_sfn_state_machine" "emr_pipeline" {
+  name     = "emr-pipeline-ecs-to-emrserverless"
+  role_arn = aws_iam_role.sfn_role.arn
+
+  depends_on = [
+    aws_iam_role_policy_attachment.sfn_attach,
+    aws_iam_role_policy_attachment.emr_serverless_job_attach,
+    aws_emrserverless_application.spark_app
+  ]
+
+  definition = jsonencode({
+    Comment = "Run ECS prep task then EMR Serverless Spark job"
+    StartAt = "RunECSPrep"
+    States = {
+      RunECSPrep = {
+        Type = "Task",
+        Resource = "arn:aws:states:::ecs:runTask.sync",
+        Parameters = {
+          Cluster        = aws_ecs_cluster.main.arn
+          TaskDefinition = aws_ecs_task_definition.prep_task.arn
+          LaunchType     = "FARGATE"
+          NetworkConfiguration = {
+            AwsvpcConfiguration = {
+              Subnets        = [ module.vpc_main.private_subnets[0] ]
+              SecurityGroups = [ aws_security_group.allow_access.id ]
+              AssignPublicIp = "DISABLED"
+            }
+          }
+        },
+        Next = "StartEmrServerless"
+      },
+      StartEmrServerless = {
+        Type = "Task",
+        Resource = "arn:aws:states:::aws-sdk:emrserverless:startJobRun",
+        Parameters = {
+          ApplicationId    = aws_emrserverless_application.spark_app.id
+          ExecutionRoleArn = aws_iam_role.emr_serverless_job_role.arn
+          Name             = "spark-submit-script"
+          #ReleaseLabel     = "emr-6.9.0"
+          ClientToken       = "some-unique-${timestamp()}"
+          JobDriver = {
+            SparkSubmit = {
+              EntryPoint = "s3://sparkresultsjjjmain/src/script.py"
+              SparkSubmitParameters = "--deploy-mode cluster --conf spark.dynamicAllocation.enabled=false --conf spark.executor.memory=36g --conf spark.executor.memoryOverhead=6g --conf spark.driver.memory=4g --conf spark.local.dir=/mnt"
+            }
+          }
+          ConfigurationOverrides = {
+            MonitoringConfiguration = {
+              S3MonitoringConfiguration = {
+                LogUri = "s3://sparkresultsjjjmain/logs/"
+              }
+            }
+          }
+        },
+        ResultPath = "$.EmrStart",
+        Next = "WaitForEmr"
+      },
+
+      WaitForEmr = {
+        Type = "Wait",
+        Seconds = 15,
+        Next = "GetEmrStatus"
+      },
+
+      GetEmrStatus = {
+        Type = "Task",
+        Resource = "arn:aws:states:::aws-sdk:emrserverless:getJobRun",
+        Parameters = {
+          ApplicationId = aws_emrserverless_application.spark_app.id
+          JobRunId      = "$.EmrStart.JobRunId"
+        },
+        ResultPath = "$.EmrStatus",
+        Next = "CheckEmrStatus"
+      },
+
+      CheckEmrStatus = {
+        Type = "Choice",
+        Choices = [
+          { Variable = "$.EmrStatus.JobRun.State", StringEquals = "SUCCESS", Next = "Success" },
+          { Variable = "$.EmrStatus.JobRun.State", StringEquals = "FAILED",  Next = "Failed"  },
+          { Variable = "$.EmrStatus.JobRun.State", StringEquals = "CANCELLED", Next = "Failed" }
+        ],
+        Default = "WaitForEmr"
+      },
+
+      Success = { Type = "Succeed" },
+      Failed  = { Type = "Fail", Error = "EmrServerlessFailed", Cause = "EMR Serverless job failed or cancelled" }
     }
-  ])
-
-  
-
-  log_uri = "s3://sparkresultsjjjmain/logs/"
+  })
 }
