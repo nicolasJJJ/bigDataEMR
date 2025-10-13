@@ -99,53 +99,85 @@ resource "aws_security_group" "allow_access" {
 ###############################################################################
 #    Gateway VPC Endpoint pour S3                 
 ###############################################################################
+module "vpc_endpoints" {
+  source  = "terraform-aws-modules/vpc/aws//modules/vpc-endpoints"
+  version = "~> 5.0"
 
-resource "aws_vpc_endpoint" "s3" {
-  vpc_id            = module.vpc_main.vpc_id
-  service_name      = "com.amazonaws.${var.aws_region}.s3"
-  vpc_endpoint_type = "Gateway"
-  route_table_ids = concat(
-    module.vpc_main.public_route_table_ids,
-    module.vpc_main.private_route_table_ids
-  )
-  policy = <<POLICY
-{
-  "Statement":[
-    {
-      "Effect":"Allow",
-      "Principal":"*",
-      "Action":"s3:*",
-      "Resource":["arn:aws:s3:::sparkresultsjjjmain", "arn:aws:s3:::sparkresultsjjjmain/*"]
+  vpc_id = module.vpc_main.vpc_id
+
+  endpoints = {
+    s3 = {
+      service         = "s3"
+      service_type    = "Gateway"
+      route_table_ids = concat(module.vpc_main.private_route_table_ids, module.vpc_main.public_route_table_ids)  # Ajoute public comme dans ta manuelle, connard
+      tags            = { Name = "s3-vpc-endpoint" }
+      policy          = jsonencode({  # Colle ta policy de merde ici pour restreindre
+        Version = "2012-10-17",
+        Statement = [
+          {
+            Effect = "Allow",
+            Principal = "*",
+            Action = [
+              "*"
+            ],
+            Resource = [
+              "*"
+            ]
+          },
+
+        ]
+      })
     },
-    {
-      "Effect": "Allow",
-      "Principal": "*",
-      "Action": [
-        "s3:GetObject",
-        "s3:ListBucket"
-      ],
-      "Resource": [
-        "arn:aws:s3:::amazonlinux-2-repos-eu-west-3",
-        "arn:aws:s3:::amazonlinux-2-repos-eu-west-3/*"
-      ]
+    ecr_api = {
+      service             = "ecr.api"
+      private_dns_enabled = true
+      subnet_ids          = module.vpc_main.private_subnets
+      security_group_ids  = [aws_security_group.allow_access.id]  # Ajoute ton SG comme dans la manuelle, bordel
+      tags                = { Name = "ecr-api-vpc-endpoint" }
+      policy              = jsonencode({  # Colle la policy de ta manuelle
+        Version = "2012-10-17",
+        Statement = [
+          {
+            Effect    = "Allow",
+            Principal = "*",
+            Action    = "ecr:*",
+            Resource  = "*"
+          }
+        ]
+      })
     },
-    {
-      "Effect": "Allow",
-      "Principal": "*",
-      "Action": [
-        "s3:GetObject",
-        "s3:ListBucket"
-      ],
-      "Resource": [
-        "arn:aws:s3:::repo.eu-west-3.emr.amazonaws.com",
-        "arn:aws:s3:::repo.eu-west-3.emr.amazonaws.com/*"
-      ]
+    ecr_dkr = {
+      service             = "ecr.dkr"
+      private_dns_enabled = true
+      subnet_ids          = module.vpc_main.private_subnets
+      security_group_ids  = [aws_security_group.allow_access.id]  # Pareil ici, fils de pute
+      tags                = { Name = "ecr-dkr-vpc-endpoint" }
+      policy              = jsonencode({  # Même policy
+        Version = "2012-10-17",
+        Statement = [
+          {
+            Effect    = "Allow",
+            Principal = "*",
+            Action    = "ecr:*",
+            Resource  = "*"
+          }
+        ]
+      })
+    },
+    sts = {
+      service             = "sts"
+      private_dns_enabled = true
+      subnet_ids          = module.vpc_main.private_subnets
+      security_group_ids  = [aws_security_group.allow_access.id]  # Ajoute le SG pour STS aussi, pour être cohérent
+      tags                = { Name = "sts-vpc-endpoint" }
+      # Si t'as besoin d'une policy pour STS, ajoute-la ici, sinon laisse vide
     }
-  ]
-}
-POLICY
-}
+  }
 
+  tags = {
+    Environment = "dev"  # Ou ce que tu veux, bordel
+  }
+}
 
 ###############################################################################
 # ECS Task IAM Roles                                                          #
@@ -181,12 +213,28 @@ resource "aws_iam_policy" "ecs_execution_role_policy" {
       {
         Effect   = "Allow",
         Action   = [
-          "ecr:GetAuthorizationToken",
+          "ecr:GetAuthorizationToken"
+        ],
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow",
+        Action   = [
           "ecr:BatchCheckLayerAvailability",
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage"
         ],
-        Resource = "*"
+        Resource = "arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/emr_fine"
+      },
+      {
+        Effect   = "Allow",
+        Action   = [
+          "ssm:GetParameter",
+          "kms:Decrypt"
+        ],
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/kaggle/*"
+        ]
       }
     ]
   })
@@ -201,12 +249,35 @@ resource "aws_iam_role" "ecs_task_role" {
   name = "ecs_task_role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [{
-      Effect = "Allow",
-      Principal = { Service = "ecs-tasks.amazonaws.com" },
-      Action   = "sts:AssumeRole"
-    }]
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { Service = "ecs-tasks.amazonaws.com" }
+        Action    = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "ecs_task_policy" {
+  name = "ecs_task_policy"
+  role = aws_iam_role.ecs_task_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "ecr:*"
+        Resource = "arn:aws:ecr:eu-west-3:${data.aws_caller_identity.current.account_id}:repository/*" 
+      },
+      {
+        Effect   = "Allow"
+        Action   = "ecr:GetAuthorizationToken"
+        Resource = "*"
+      },
+    ]
   })
 }
 
@@ -236,7 +307,19 @@ resource "aws_iam_policy" "ecs_task_s3_policy" {
         Resource = [
           "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/kaggle/*"
         ]
-      }
+      },
+      {
+
+          Effect= "Allow",
+          Action= [
+            "ecr:GetDownloadUrlForLayer",
+            "ecr:BatchGetImage",
+            "ecr:BatchCheckLayerAvailability",
+            "ecr:GetAuthorizationToken"
+          ],
+          Resource= "arn:aws:ecr:eu-west-3:${data.aws_caller_identity.current.account_id}:repository/emr_fine"
+        }
+
     ]
   })
 }
@@ -272,7 +355,7 @@ resource "aws_ecs_task_definition" "prep_task" {
   container_definitions = jsonencode([
     {
       name      = "pyproject"
-      image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.eu-west-3.amazonaws.com/emr_fine@sha256:a98f95ced530c40665934f57cdfce02dbc74745b73aa1e1c1a74989d7ef433e5"
+      image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.eu-west-3.amazonaws.com/emr_fine:latest12"
       essential = true
       cpu       = 16384
       memory    = 122880
@@ -323,6 +406,18 @@ resource "aws_kms_key" "emrb" {
         "kms:GenerateDataKey*",
         "kms:DescribeKey",
         "kms:CreateGrant"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowEcsTaskRoleToUseKey",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "${aws_iam_role.ecs_task_role.arn}"
+      },
+      "Action": [
+        "kms:Decrypt",
+        "kms:DescribeKey"
       ],
       "Resource": "*"
     },
