@@ -21,6 +21,16 @@ BROUILLON
 
 # Installation
 
+## Docker image 
+
+aws ecr create-repository --repository-name emr-project
+image_id = 7f99df394a0c (ex)
+
+docker tag image_id aws_account_id.dkr.ecr.eu-west-3.amazonaws.com/my-repository:tag
+docker push aws_account_id.dkr.ecr.eu-west-3.amazonaws.com/my-repository:tag
+
+## terraform
+
 1/ lancer github Actions ou créer un bucket s3 + insérer 'script.py' dans bucket/src. Voir main.yaml.
 
 côté terraform, considérant que vous avez déjà votre bucket de configuré
@@ -57,10 +67,17 @@ Créée et configure un bucket S3 sur AWS contenant le script qui sera exécuté
 ## main.tf
 
 On se sent terraformeur ? On utilise Terraform.
-Crée : le VPC, les sous-réseaux publics (pour télécharger le fichier Kaggle) et privés, les Gateways et le Gateway Endpoint pour faire réseau privé <-> S3..
+Crée : le VPC, les sous-réseaux publics et privés, les Gateways et le Gateway Endpoint pour faire réseau privé <-> S3..
 On configure les rôles, les clés, les groupes de sécurité, etc... 
 On upload le script, on initie le spark action.
 
+## dossier fargate
+
+L'objectif est de lancer le téléchargement d'un fichier JSONL et de le convertir en .PARQUET depuis Fargate jusqu'à S3. 
+X à Lambda car trop de temps / ressources
+V pour ECS
+
+TODO : marche à suivre et solutions d'automatisation + TUs et enlever vars en dur
 
 # tests
 

@@ -13,8 +13,7 @@ spark = SparkSession.builder \
 
 spark.sparkContext.setLogLevel("WARN")
 
-
-df = spark.read.json("hdfs:///data/thepile_raw/00.jsonl")
+df = spark.read.load("s3a://sparkresultsjjjmain/the-pile/part-00/00.parquet")
 df.printSchema()
 df.show()
 
