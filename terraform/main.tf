@@ -736,14 +736,15 @@ resource "aws_sfn_state_machine" "emr_pipeline" {
           ApplicationId    = aws_emrserverless_application.spark_app.id
           ExecutionRoleArn = aws_iam_role.emr_serverless_job_role.arn
           Name             = "spark-submit-script"
-          #ReleaseLabel     = "emr-6.9.0"
           ClientToken       = "some-unique-${timestamp()}"
           JobDriver = {
             SparkSubmit = {
               EntryPoint = "s3://sparkresultsjjjmain/src/script.py"
-              SparkSubmitParameters = "--deploy-mode cluster --conf spark.dynamicAllocation.enabled=false --conf spark.executor.memory=36g --conf spark.executor.memoryOverhead=6g --conf spark.driver.memory=4g --conf spark.local.dir=/mnt"
+              SparkSubmitParameters = "--deploy-mode cluster --conf spark.dynamicAllocation.enabled=false --conf spark.executor.memory=36g --conf spark.executor.memoryOverhead=6g --conf spark.driver.memory=4g --conf spark.local.dir=/mnt --conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem"
             }
           }
+
+
           ConfigurationOverrides = {
             MonitoringConfiguration = {
               S3MonitoringConfiguration = {
