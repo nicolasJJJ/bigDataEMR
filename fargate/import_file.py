@@ -5,7 +5,7 @@ from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError
-
+import sys
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -123,6 +123,7 @@ s3_client = session.client("s3")
 try:
     s3_client.upload_file(FILE_PARQUET, BUCKET_NAME, S3_KEY)
     print(f"Upload OK -> s3://{BUCKET_NAME}/{S3_KEY}")
+    sys.exit(0)
 except ClientError as e:
     logging.error("Échec upload S3: %s", e)
     raise

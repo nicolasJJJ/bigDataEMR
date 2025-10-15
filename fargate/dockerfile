@@ -2,6 +2,6 @@ FROM python:3.9-slim
 
 ADD import_file.py .
 
-RUN python -m pip install boto3 pandas pyarrow opendatasets
+RUN python -m pip install boto3 pandas pyarrow opendatasets sys
 
 CMD ["python", "./import_file.py"]
