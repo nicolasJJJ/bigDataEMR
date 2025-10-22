@@ -55,9 +55,8 @@ if download_root is None:
 download_root = Path(download_root).resolve()
 print("Download dir:", download_root)
 
-# we never know...
-jsonl_files = next(download_root.rglob("00.jsonl"))
 
+jsonl_files = list(download_root.rglob("00.jsonl"))
 
 if not jsonl_files:
     raise FileNotFoundError("File not found.")

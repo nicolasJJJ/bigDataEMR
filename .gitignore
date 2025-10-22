@@ -7,3 +7,5 @@ readparquet.py
 */certs/*
 */build/*
 *.tfstate*
+*_WIN*
+*.pyc

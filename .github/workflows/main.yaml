@@ -17,6 +17,32 @@ env:
 
 
 jobs:
+
+test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-spark
+      - name: Download Spark
+        run: |
+          wget https://archive.apache.org/dist/spark/spark-3.5.3/spark-3.5.3-bin-hadoop3.tgz
+          tar xvf spark-3.5.3-bin-hadoop3.tgz
+          mv spark-3.5.3-bin-hadoop3 spark
+      - name: Set Spark env
+        run: |
+          echo "SPARK_HOME=$(pwd)/spark" >> $GITHUB_ENV
+          echo "$(pwd)/spark/bin" >> $GITHUB_PATH
+          echo "$(pwd)/spark/python" >> PYTHONPATH
+          echo "$(pwd)/spark/python/lib/py4j-0.10.9.7-src.zip" >> PYTHONPATH
+      - name: Run tests
+        run: pytest code/test_clean_df.py 
+
   create-bucket:
     runs-on: ubuntu-latest
     steps:
@@ -84,4 +110,6 @@ jobs:
           echo "Upload script.py & install_python_libs.sh to the bucket/src"
           aws s3 cp code/install_python_libs.sh s3://${{ env.BUCKET_NAME}}/src/ --region ${{ env.AWS_REGION }}
           aws s3 cp code/script.py s3://${{ env.BUCKET_NAME}}/src/ --region ${{ env.AWS_REGION }}
+          aws s3 cp code/script.py s3://${{ env.BUCKET_NAME}}/src/ --region ${{ env.AWS_REGION }}
+          aws s3 cp code/transform_df.py s3://${{ env.BUCKET_NAME}}/src/ --region ${{ env.AWS_REGION }}
 
