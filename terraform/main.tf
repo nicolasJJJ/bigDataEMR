@@ -13,6 +13,15 @@ terraform {
   }
 }
 
+locals {
+  timestamp = "${timestamp()}"
+  timestamp_no_hyphens = "${replace("${local.timestamp}", "-", "")}"
+  timestamp_no_spaces = "${replace("${local.timestamp_no_hyphens}", " ", "")}"
+  timestamp_no_t = "${replace("${local.timestamp_no_spaces}", "T", "")}"
+  timestamp_no_z = "${replace("${local.timestamp_no_t}", "Z", "")}"
+  timestamp_no_colons = "${replace("${local.timestamp_no_z}", ":", "")}"
+  timestamp_sanitized = "${local.timestamp_no_colons}"
+}
 
 variable "aws_region" {
   type        = string
@@ -352,10 +361,14 @@ resource "aws_ecs_task_definition" "prep_task" {
   execution_role_arn       = aws_iam_role.ecs_execution_role.arn
   task_role_arn            = aws_iam_role.ecs_task_role.arn
 
+  ephemeral_storage {
+    size_in_gib = 200
+  }
+
   container_definitions = jsonencode([
     {
       name      = "pyproject"
-      image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.eu-west-3.amazonaws.com/emr_fine:latest12"
+      image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.eu-west-3.amazonaws.com/emr_fine:3"
       essential = true
       cpu       = 16384
       memory    = 122880
@@ -699,7 +712,7 @@ resource "aws_iam_role_policy_attachment" "sfn_attach" {
 }
 
 resource "aws_sfn_state_machine" "emr_pipeline" {
-  name     = "emr-pipeline-ecs-to-emrserverless"
+  name     = "pipeline-ecs-to-emrserverless"
   role_arn = aws_iam_role.sfn_role.arn
 
   depends_on = [
@@ -736,11 +749,11 @@ resource "aws_sfn_state_machine" "emr_pipeline" {
           ApplicationId    = aws_emrserverless_application.spark_app.id
           ExecutionRoleArn = aws_iam_role.emr_serverless_job_role.arn
           Name             = "spark-submit-script"
-          ClientToken       = "some-unique-${timestamp()}"
+          ClientToken       = "${local.timestamp_no_colons}"
           JobDriver = {
             SparkSubmit = {
               EntryPoint = "s3://sparkresultsjjjmain/src/script.py"
-              SparkSubmitParameters = "--deploy-mode cluster --conf spark.dynamicAllocation.enabled=false --conf spark.executor.memory=36g --conf spark.executor.memoryOverhead=6g --conf spark.driver.memory=4g --conf spark.local.dir=/mnt --conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem"
+              SparkSubmitParameters = "--conf spark.executor.cores=4 --conf spark.dynamicAllocation.enabled=false --conf spark.executor.memory=24g --conf spark.executor.memoryOverhead=6g --conf spark.driver.memory=4g --conf spark.local.dir=/mnt --conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem"
             }
           }
 

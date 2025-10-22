@@ -5,7 +5,7 @@ from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError
-
+import sys
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -55,9 +55,8 @@ if download_root is None:
 download_root = Path(download_root).resolve()
 print("Download dir:", download_root)
 
-# we never know...
-jsonl_files = next(download_root.rglob("00.jsonl"))
 
+jsonl_files = list(download_root.rglob("00.jsonl"))
 
 if not jsonl_files:
     raise FileNotFoundError("File not found.")
@@ -123,6 +122,7 @@ s3_client = session.client("s3")
 try:
     s3_client.upload_file(FILE_PARQUET, BUCKET_NAME, S3_KEY)
     print(f"Upload OK -> s3://{BUCKET_NAME}/{S3_KEY}")
+    sys.exit(0)
 except ClientError as e:
     logging.error("Échec upload S3: %s", e)
     raise
