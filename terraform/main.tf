@@ -740,8 +740,38 @@ resource "aws_sfn_state_machine" "emr_pipeline" {
             }
           }
         },
+        Next = "StartEmrBronzeToSilver"
+      },
+
+      StartEmrBronzeToSilver = {
+        Type = "Task",
+        Resource = "arn:aws:states:::aws-sdk:emrserverless:startJobRun",
+        Parameters = {
+          ApplicationId    = aws_emrserverless_application.spark_app.id
+          ExecutionRoleArn = aws_iam_role.emr_serverless_job_role.arn
+          Name             = "spark-submit-script"
+          "ClientToken.$"  = "States.UUID()"
+          JobDriver = {
+            SparkSubmit = {
+              EntryPoint = "s3://sparkresultsjjjmain/src/bronze_to_silver.py"
+              SparkSubmitParameters = "--conf spark.executor.cores=4 --conf spark.dynamicAllocation.enabled=false --conf spark.executor.memory=24g --conf spark.executor.memoryOverhead=6g --conf spark.driver.memory=4g --conf spark.local.dir=/mnt --conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem"
+            }
+          }
+
+
+          ConfigurationOverrides = {
+            MonitoringConfiguration = {
+              S3MonitoringConfiguration = {
+                LogUri = "s3://sparkresultsjjjmain/logs/"
+              }
+            }
+          }
+        },
+        ResultPath = "$.EmrStart",
         Next = "StartEmrServerless"
       },
+
+
       StartEmrServerless = {
         Type = "Task",
         Resource = "arn:aws:states:::aws-sdk:emrserverless:startJobRun",
@@ -749,7 +779,7 @@ resource "aws_sfn_state_machine" "emr_pipeline" {
           ApplicationId    = aws_emrserverless_application.spark_app.id
           ExecutionRoleArn = aws_iam_role.emr_serverless_job_role.arn
           Name             = "spark-submit-script"
-          ClientToken       = "${local.timestamp_no_colons}"
+          "ClientToken.$"  = "States.UUID()"
           JobDriver = {
             SparkSubmit = {
               EntryPoint = "s3://sparkresultsjjjmain/src/script.py"
@@ -770,6 +800,8 @@ resource "aws_sfn_state_machine" "emr_pipeline" {
         Next = "WaitForEmr"
       },
 
+
+
       WaitForEmr = {
         Type = "Wait",
         Seconds = 15,
@@ -781,7 +813,7 @@ resource "aws_sfn_state_machine" "emr_pipeline" {
         Resource = "arn:aws:states:::aws-sdk:emrserverless:getJobRun",
         Parameters = {
           ApplicationId = aws_emrserverless_application.spark_app.id
-          JobRunId      = "$.EmrStart.JobRunId"
+          "JobRunId.$"      = "$.EmrStart.JobRunId"
         },
         ResultPath = "$.EmrStatus",
         Next = "CheckEmrStatus"
