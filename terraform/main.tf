@@ -740,24 +740,22 @@ resource "aws_sfn_state_machine" "emr_pipeline" {
             }
           }
         },
-        Next = "StartEmrServerless"
+        Next = "StartEmrBronzeToSilver"
       },
-      StartEmrServerless = {
-        Type = "Task",
-        Resource = "arn:aws:states:::aws-sdk:emrserverless:startJobRun",
+
+      StartEmrBronzeToSilver = {
+        Type = "Task"
+        Resource = "arn:aws:states:::emrserverless:startJobRun.sync"
         Parameters = {
           ApplicationId    = aws_emrserverless_application.spark_app.id
           ExecutionRoleArn = aws_iam_role.emr_serverless_job_role.arn
-          Name             = "spark-submit-script"
-          ClientToken       = "${local.timestamp_no_colons}"
+          Name             = "bronze-to-silver-job"
           JobDriver = {
             SparkSubmit = {
-              EntryPoint = "s3://sparkresultsjjjmain/src/script.py"
-              SparkSubmitParameters = "--conf spark.executor.cores=4 --conf spark.dynamicAllocation.enabled=false --conf spark.executor.memory=24g --conf spark.executor.memoryOverhead=6g --conf spark.driver.memory=4g --conf spark.local.dir=/mnt --conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem"
+              EntryPoint = "s3://sparkresultsjjjmain/src/bronze_to_silver.py"
+              SparkSubmitParameters = "--conf spark.executor.cores=4 --conf spark.dynamicAllocation.enabled=false --conf spark.executor.memory=24g --conf spark.executor.memoryOverhead=6g --conf spark.driver.memory=4g --conf spark.local.dir=/mnt"
             }
           }
-
-
           ConfigurationOverrides = {
             MonitoringConfiguration = {
               S3MonitoringConfiguration = {
@@ -765,40 +763,38 @@ resource "aws_sfn_state_machine" "emr_pipeline" {
               }
             }
           }
-        },
-        ResultPath = "$.EmrStart",
-        Next = "WaitForEmr"
-      },
+        }
+        ResultPath = "$.EmrBronzeResult" 
+        Next = "StartEmrSilverToGold"
+      }
 
-      WaitForEmr = {
-        Type = "Wait",
-        Seconds = 15,
-        Next = "GetEmrStatus"
-      },
-
-      GetEmrStatus = {
-        Type = "Task",
-        Resource = "arn:aws:states:::aws-sdk:emrserverless:getJobRun",
+      StartEmrSilverToGold = {
+        Type = "Task"
+        Resource = "arn:aws:states:::emrserverless:startJobRun.sync"
         Parameters = {
-          ApplicationId = aws_emrserverless_application.spark_app.id
-          JobRunId      = "$.EmrStart.JobRunId"
-        },
-        ResultPath = "$.EmrStatus",
-        Next = "CheckEmrStatus"
-      },
+          ApplicationId    = aws_emrserverless_application.spark_app.id
+          ExecutionRoleArn = aws_iam_role.emr_serverless_job_role.arn
+          Name             = "silver-to-gold-analysis"
+          JobDriver = {
+            SparkSubmit = {
+              EntryPoint = "s3://sparkresultsjjjmain/src/script.py"
+              SparkSubmitParameters = "--conf spark.executor.cores=4 --conf spark.dynamicAllocation.enabled=false --conf spark.executor.memory=24g --conf spark.executor.memoryOverhead=6g --conf spark.driver.memory=4g --conf spark.local.dir=/mnt"
+            }
+          }
+          ConfigurationOverrides = {
+            MonitoringConfiguration = {
+              S3MonitoringConfiguration = {
+                LogUri = "s3://sparkresultsjjjmain/logs/"
+              }
+            }
+          }
+        }
+        ResultPath = "$.EmrGoldResult"
+        Next = "Success"
+      }
 
-      CheckEmrStatus = {
-        Type = "Choice",
-        Choices = [
-          { Variable = "$.EmrStatus.JobRun.State", StringEquals = "SUCCESS", Next = "Success" },
-          { Variable = "$.EmrStatus.JobRun.State", StringEquals = "FAILED",  Next = "Failed"  },
-          { Variable = "$.EmrStatus.JobRun.State", StringEquals = "CANCELLED", Next = "Failed" }
-        ],
-        Default = "WaitForEmr"
-      },
-
-      Success = { Type = "Succeed" },
-      Failed  = { Type = "Fail", Error = "EmrServerlessFailed", Cause = "EMR Serverless job failed or cancelled" }
-    }
-  })
+      Success = {
+        Type = "Succeed"
+      }
+  }})
 }
