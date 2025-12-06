@@ -63,7 +63,7 @@ if not jsonl_file:
 
 s3_client = session.client("s3")
 try:
-    s3_client.upload_file(FILE_JSONL, BUCKET_NAME, S3_KEY)
+    s3_client.upload_file(str(jsonl_file), BUCKET_NAME, S3_KEY)
     print(f"Upload OK -> s3://{BUCKET_NAME}/{S3_KEY}")
     sys.exit(0)
 except ClientError as e:

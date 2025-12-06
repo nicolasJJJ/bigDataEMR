@@ -368,7 +368,7 @@ resource "aws_ecs_task_definition" "prep_task" {
   container_definitions = jsonencode([
     {
       name      = "pyproject"
-      image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.eu-west-3.amazonaws.com/emr_fine:3"
+      image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.eu-west-3.amazonaws.com/emr_fine:latest15"
       essential = true
       cpu       = 16384
       memory    = 122880
@@ -595,7 +595,7 @@ resource "aws_iam_role_policy_attachment" "emr_serverless_job_attach" {
 # 6. Application EMR Serverless
 resource "aws_emrserverless_application" "spark_app" {
   name          = "spark-emr-serverless"
-  release_label = "emr-6.9.0"
+  release_label = "emr-7.1.0"
   type          = "SPARK"
 
   network_configuration {
@@ -712,7 +712,7 @@ resource "aws_iam_role_policy_attachment" "sfn_attach" {
 }
 
 resource "aws_sfn_state_machine" "emr_pipeline" {
-  name     = "pipeline-ecs-to-emrserverless"
+  name     = "pipeline-ecs-to-emrserverless-to-gold"
   role_arn = aws_iam_role.sfn_role.arn
 
   depends_on = [
@@ -745,7 +745,7 @@ resource "aws_sfn_state_machine" "emr_pipeline" {
 
       StartEmrBronzeToSilver = {
         Type = "Task"
-        Resource = "arn:aws:states:::emrserverless:startJobRun.sync"
+        Resource = "arn:aws:states:::emr-serverless:startJobRun.sync"
         Parameters = {
           ApplicationId    = aws_emrserverless_application.spark_app.id
           ExecutionRoleArn = aws_iam_role.emr_serverless_job_role.arn
@@ -770,7 +770,7 @@ resource "aws_sfn_state_machine" "emr_pipeline" {
 
       StartEmrSilverToGold = {
         Type = "Task"
-        Resource = "arn:aws:states:::emrserverless:startJobRun.sync"
+        Resource = "arn:aws:states:::emr-serverless:startJobRun.sync"
         Parameters = {
           ApplicationId    = aws_emrserverless_application.spark_app.id
           ExecutionRoleArn = aws_iam_role.emr_serverless_job_role.arn
