@@ -8,8 +8,8 @@ from botocore.exceptions import ClientError
 import sys
 
 FILE_JSONL = "00.jsonl"
-BUCKET_NAME = "sparkresultsjjjmain"          # <<< NOM du bucket, PAS l'ARN
-S3_KEY = f"the-pile/bronze/{FILE_JSONL}"  # chemin (key) côté S3
+BUCKET_NAME = "sparkresultsjjjmain"
+S3_KEY = f"the-pile/bronze/{FILE_JSONL}"
 
 KAGGLE_DATA_URL = "https://www.kaggle.com/datasets/dschettler8845/the-pile-dataset-part-00-of-29"
 
