@@ -1,10 +1,7 @@
-from pathlib import Path
 from pyspark.sql import SparkSession, DataFrame
 import os
-from pyspark.testing.utils import assertDataFrameEqual
 
-from pyspark.sql.functions import col, length, instr, when
-from test_clean_df import transform_df
+from pyspark.sql.functions import col, length
 from pyspark.sql.types import StructType, StructField, StringType, LongType
 
 schema_parquet = StructType([
@@ -14,23 +11,31 @@ schema_parquet = StructType([
     ]), True)
 ])
 
-spark = SparkSession.builder \
-    .appName("EMR_spark") \
-    .getOrCreate()
+def transform_df(df: DataFrame) -> DataFrame:
+    df = df.filter(length(col("text")) > 100)\
+       .where(~col('text').contains('copyright'))\
+       .withColumn('set_name', col("meta.pile_set_name"))\
+       .drop('meta')
+    return df
 
-spark.sparkContext.setLogLevel("WARN")
+if __name__ == "__main__":
+    spark = SparkSession.builder \
+        .appName("EMR_spark") \
+        .getOrCreate()
 
-df = spark.read.load("s3a://sparkresultsjjjmain/the-pile/part-00/00.jsonl")
+    spark.sparkContext.setLogLevel("WARN")
 
-df = transform_df(df)
+    df = spark.read.parquet("s3://sparkresultsjjjmain/silver/00.parquet")
 
-df.write \
-  .partitionBy("set_name") \
-  .mode("overwrite") \
-  .option("compression", "snappy") \
-  .parquet("s3a://sparkresultsjjj/thepile_cleaned/")
+    df = transform_df(df)
 
-spark.stop()
+    df.write \
+    .partitionBy("set_name") \
+    .mode("overwrite") \
+    .option("compression", "snappy") \
+    .parquet("s3://sparkresultsjjjmain/gold/thepile/")
+
+    spark.stop()
 
 
 

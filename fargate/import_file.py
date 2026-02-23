@@ -8,8 +8,8 @@ from botocore.exceptions import ClientError
 import sys
 
 FILE_JSONL = "00.jsonl"
-BUCKET_NAME = "sparkresultsjjjmain"          # <<< NOM du bucket, PAS l'ARN
-S3_KEY = f"the-pile/bronze/{FILE_JSONL}"  # chemin (key) côté S3
+BUCKET_NAME = "sparkresultsjjjmain"
+S3_KEY = f"the-pile/bronze/{FILE_JSONL}"
 
 KAGGLE_DATA_URL = "https://www.kaggle.com/datasets/dschettler8845/the-pile-dataset-part-00-of-29"
 
@@ -63,7 +63,7 @@ if not jsonl_file:
 
 s3_client = session.client("s3")
 try:
-    s3_client.upload_file(FILE_JSONL, BUCKET_NAME, S3_KEY)
+    s3_client.upload_file(str(jsonl_file), BUCKET_NAME, S3_KEY)
     print(f"Upload OK -> s3://{BUCKET_NAME}/{S3_KEY}")
     sys.exit(0)
 except ClientError as e:

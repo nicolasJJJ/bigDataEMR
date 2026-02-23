@@ -5,7 +5,7 @@ import sys
 
 import pytest
 from pyspark.sql import SparkSession, Row
-from transform_df import transform_df
+from script import transform_df
 from pyspark.sql.types import StructType, StructField, StringType
 
 @pytest.fixture(scope="session")
