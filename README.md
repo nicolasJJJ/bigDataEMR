@@ -50,8 +50,10 @@ graph TD
 
     %% Infra Flow
     TF -.->|Provisionne| EMR
-    TF -.->|Configure| Data Lake S3
-    GH -.->|Upload Scripts| Data Lake S3
+    TF -.->|Configure| S3Bronze
+    TF -.->|Configure| S3Gold
+    GH -.->|Upload Scripts| S3Bronze
+    GH -.->|Upload Scripts| S3Gold
 ```
 
 1. **Ingestion (Fargate) -> Bronze (S3)** : Un conteneur s'exécutant sur AWS Fargate télécharge un extrait du dataset *The Pile* (~50Go) depuis Kaggle (format JSONL) et l'upload sur S3. L'utilisation de Fargate est privilégiée à Lambda en raison des limitations de temps de traitement et de ressources de ce dernier.
