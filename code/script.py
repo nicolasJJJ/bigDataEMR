@@ -29,13 +29,8 @@ if __name__ == "__main__":
 
     df = spark.read.parquet(path)
 
-    URI = spark._jvm.java.net.URI
-    HadoopPath = spark._jvm.org.apache.hadoop.fs.Path
-    FileSystem = spark._jvm.org.apache.hadoop.fs.FileSystem
-    conf = spark.sparkContext._jsc.hadoopConfiguration()
-    
-    fs = FileSystem.get(URI(path), conf)
-    size_bytes = fs.getContentSummary(HadoopPath(path)).getLength()
+    size_bytes = df._jdf.queryExecution().optimizedPlan().stats().sizeInBytes()
+
 
     target_size_mb = 128
     num_partitions = max(1, int(size_bytes / (1024 * 1024 * target_size_mb)))
