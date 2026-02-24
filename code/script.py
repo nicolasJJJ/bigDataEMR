@@ -29,8 +29,6 @@ if __name__ == "__main__":
 
     df = spark.read.parquet(path)
 
-    # L'API FileSystem d'Hadoop n'existe pas nativement en Python
-    # Il faut l'invoquer via la passerelle JVM (Py4J) de Spark
     URI = spark._jvm.java.net.URI
     HadoopPath = spark._jvm.org.apache.hadoop.fs.Path
     FileSystem = spark._jvm.org.apache.hadoop.fs.FileSystem
