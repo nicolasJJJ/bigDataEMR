@@ -11,6 +11,8 @@ schema_parquet = StructType([
     ]), True)
 ])
 
+path = "s3://sparkresultsjjjmain/silver/00.parquet"
+
 def transform_df(df: DataFrame) -> DataFrame:
     df = df.filter(length(col("text")) > 100)\
        .where(~col('text').contains('copyright'))\
@@ -25,18 +27,31 @@ if __name__ == "__main__":
 
     spark.sparkContext.setLogLevel("WARN")
 
-    df = spark.read.parquet("s3://sparkresultsjjjmain/silver/00.parquet")
+    df = spark.read.parquet(path)
+
+    # L'API FileSystem d'Hadoop n'existe pas nativement en Python
+    # Il faut l'invoquer via la passerelle JVM (Py4J) de Spark
+    URI = spark._jvm.java.net.URI
+    HadoopPath = spark._jvm.org.apache.hadoop.fs.Path
+    FileSystem = spark._jvm.org.apache.hadoop.fs.FileSystem
+    conf = spark.sparkContext._jsc.hadoopConfiguration()
+    
+    fs = FileSystem.get(URI(path), conf)
+    size_bytes = fs.getContentSummary(HadoopPath(path)).getLength()
+
+    target_size_mb = 128
+    num_partitions = max(1, int(size_bytes / (1024 * 1024 * target_size_mb)))
 
     df = transform_df(df)
 
+
     df.write \
-    .partitionBy("set_name") \
-    .mode("overwrite") \
-    .option("compression", "snappy") \
-    .parquet("s3://sparkresultsjjjmain/gold/thepile/")
+        .repartition(num_partitions) \
+        .mode("overwrite") \
+        .option("compression", "snappy") \
+        .parquet("s3://sparkresultsjjjmain/gold/thepile/")
+
 
     spark.stop()
-
-
 
 
